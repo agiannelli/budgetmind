@@ -1,5 +1,6 @@
 import "server-only";
 
+import { auth0 } from "@/lib/auth0";
 import { createServiceClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export type AppUser = {
@@ -36,4 +37,21 @@ export async function ensureUser(input: {
   }
 
   return data as AppUser;
+}
+
+/**
+ * The current signed-in app user, or null if there's no session. Safe to call
+ * from server components and server actions; guarantees the `users` row exists.
+ */
+export async function getCurrentUser(): Promise<AppUser | null> {
+  const session = await auth0.getSession();
+  if (!session) return null;
+  return ensureUser({ sub: session.user.sub, email: session.user.email });
+}
+
+/** Like getCurrentUser but throws if unauthenticated — for mutations. */
+export async function requireUser(): Promise<AppUser> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated.");
+  return user;
 }

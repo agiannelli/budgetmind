@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   ArrowLeftRight,
+  Landmark,
   Wallet,
   MessageSquareHeart,
   Settings,
@@ -23,7 +24,8 @@ type NavItem = {
 // the rest advertise the shape of the product and light up in later PRs.
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
-  { label: "Transactions", href: "/transactions", icon: ArrowLeftRight, ready: false },
+  { label: "Accounts", href: "/accounts", icon: Landmark, ready: true },
+  { label: "Transactions", href: "/transactions", icon: ArrowLeftRight, ready: true },
   { label: "Envelopes", href: "/envelopes", icon: Wallet, ready: false },
   { label: "Check-in", href: "/check-in", icon: MessageSquareHeart, ready: false },
   { label: "Settings", href: "/settings", icon: Settings, ready: false },
