@@ -21,7 +21,7 @@ type NavItem = {
 };
 
 // Information architecture for the app. Only `ready` items navigate today;
-// the rest advertise the shape of the product and light up in later PRs.
+// the rest advertise the shape of the product and light up as features land.
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
   { label: "Accounts", href: "/accounts", icon: Landmark, ready: true },
@@ -82,10 +82,6 @@ export function AppSidebar() {
           );
         })}
       </nav>
-
-      <div className="mt-auto px-5 py-4 text-xs text-muted-foreground/70">
-        Phase 1 · scaffold
-      </div>
     </aside>
   );
 }
