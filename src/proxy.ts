@@ -11,13 +11,16 @@ import { auth0 } from "@/lib/auth0";
  * This is an optimistic check only. Per the Next.js data-security guidance,
  * authoritative checks also live in the (app) layout and any data access.
  */
+// Publicly reachable app routes (no session required).
+const PUBLIC_PATHS = new Set<string>(["/"]);
+
 export async function proxy(request: NextRequest) {
   const authRes = await auth0.middleware(request);
 
   const { pathname } = request.nextUrl;
 
-  // Let the Auth0 SDK's own routes through (login, logout, callback, ...).
-  if (pathname.startsWith("/auth")) {
+  // Let the Auth0 SDK's own routes and public pages through.
+  if (pathname.startsWith("/auth") || PUBLIC_PATHS.has(pathname)) {
     return authRes;
   }
 
