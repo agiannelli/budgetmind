@@ -39,7 +39,7 @@ export default async function TransactionsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
         <p className="text-muted-foreground">
-          Log spending and income by hand. Statement import arrives in the next PR.
+          Log spending and income by hand. Statement import is coming soon.
         </p>
       </div>
 

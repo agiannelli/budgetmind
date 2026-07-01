@@ -18,7 +18,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Hero — the forward-looking "safe to spend" number (PRD §6.1). Empty
-          until accounts and goals exist; wired up in later PRs. */}
+          until accounts, goals, and upcoming events exist. */}
       <Card>
         <CardHeader>
           <CardDescription>Safe to spend</CardDescription>
@@ -59,11 +59,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        Phase 1 scaffold — data, accounts, and intelligence arrive in upcoming
-        PRs.
-      </p>
     </div>
   );
 }
