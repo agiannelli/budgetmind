@@ -1,8 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { accountLabel, type Account } from "@/lib/data/accounts";
 import type { TxnType } from "@/lib/data/enums";
+import type { ImportMode } from "@/lib/import-types";
 
 export type Transaction = {
   id: string;
@@ -100,4 +102,69 @@ export async function createTransaction(
   });
 
   if (error) throw new Error(error.message);
+}
+
+/** Stable per-row key for idempotent re-imports (same statement never double-counts). */
+function importHash(
+  accountId: string,
+  occurredDate: string,
+  signedAmount: number,
+  merchant: string,
+): string {
+  return createHash("sha256")
+    .update(
+      `${accountId}|${occurredDate}|${signedAmount.toFixed(2)}|${merchant.trim().toLowerCase()}`,
+    )
+    .digest("hex");
+}
+
+/**
+ * Persist imported transactions. Idempotent: re-importing the same statement
+ * skips rows whose (user_id, import_hash) already exists. `mode` records the
+ * two-fidelity origin (bulk backfill vs. current). Returns inserted/skipped.
+ */
+export async function insertImportedTransactions(
+  userId: string,
+  accountId: string,
+  mode: ImportMode,
+  rows: {
+    occurred_date: string;
+    amount: number; // positive magnitude
+    type: TxnType;
+    merchant: string;
+    category_id: string | null;
+  }[],
+): Promise<{ inserted: number; skipped: number }> {
+  if (rows.length === 0) return { inserted: 0, skipped: 0 };
+
+  const records = rows.map((r) => {
+    const magnitude = Math.abs(r.amount);
+    const signed = r.type === "income" ? magnitude : -magnitude;
+    const merchant = r.merchant?.trim() || "";
+    return {
+      user_id: userId,
+      account_id: accountId,
+      occurred_date: r.occurred_date,
+      amount: signed,
+      type: r.type,
+      is_excluded_from_spending: r.type === "transfer" || r.type === "savings",
+      merchant_raw: merchant || null,
+      category_id: r.category_id || null,
+      source: "imported",
+      status: "confirmed",
+      fidelity: mode === "backfill" ? "backfill" : "current",
+      import_hash: importHash(accountId, r.occurred_date, signed, merchant),
+    };
+  });
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .upsert(records, { onConflict: "user_id,import_hash", ignoreDuplicates: true })
+    .select("id");
+
+  if (error) throw new Error(error.message);
+
+  const inserted = data?.length ?? 0;
+  return { inserted, skipped: records.length - inserted };
 }
