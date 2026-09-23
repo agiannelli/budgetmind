@@ -8,6 +8,7 @@ import {
   reorderEnvelopeAction,
   deactivateEnvelopeAction,
   addStarterEnvelopeAction,
+  acceptSuggestedTargetAction,
 } from "./actions";
 import {
   ENVELOPE_KINDS,
@@ -153,6 +154,12 @@ export function EnvelopesManager({
     setBusyId(null);
   }
 
+  async function acceptTarget(id: string, amount: number) {
+    setBusyId(id);
+    await acceptSuggestedTargetAction(id, amount);
+    setBusyId(null);
+  }
+
   async function remove(e: Envelope) {
     if (
       !window.confirm(
@@ -218,6 +225,7 @@ export function EnvelopesManager({
               onUp={() => reorder(e.id, "up")}
               onDown={() => reorder(e.id, "down")}
               onRemove={() => remove(e)}
+              onAcceptSuggested={(amt) => acceptTarget(e.id, amt)}
             />
           );
         })}
@@ -264,6 +272,7 @@ function EnvelopeCard({
   onUp,
   onDown,
   onRemove,
+  onAcceptSuggested,
 }: {
   envelope: Envelope;
   monthlyExpenses: number;
@@ -275,6 +284,7 @@ function EnvelopeCard({
   onUp: () => void;
   onDown: () => void;
   onRemove: () => void;
+  onAcceptSuggested: (amount: number) => void;
 }) {
   const target =
     e.funding_type === "build_to_target" || e.funding_type === "refill_to_cap"
@@ -283,6 +293,16 @@ function EnvelopeCard({
   const pct =
     target != null && target > 0
       ? Math.min(100, Math.round((e.current_balance / target) * 100))
+      : null;
+  // A months-based goal with no explicit dollar target yet, but a computable
+  // estimate — offer to lock it in as a concrete, editable target.
+  const suggested =
+    e.funding_type === "build_to_target" &&
+    e.target_amount == null &&
+    e.target_months != null &&
+    target != null &&
+    target > 0
+      ? target
       : null;
 
   return (
@@ -343,6 +363,20 @@ function EnvelopeCard({
                 className="h-full rounded-full bg-primary"
                 style={{ width: `${pct}%` }}
               />
+            </div>
+          )}
+
+          {suggested != null && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Suggested target {formatCurrency(suggested)} —{" "}
+              <button
+                type="button"
+                onClick={() => onAcceptSuggested(suggested)}
+                disabled={busy || disabled}
+                className="font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                Use this
+              </button>
             </div>
           )}
         </div>

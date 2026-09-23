@@ -7,8 +7,10 @@ import {
   updateEnvelope,
   deactivateEnvelope,
   reorderEnvelope,
+  setEnvelopeTarget,
 } from "@/lib/data/envelopes";
 import { applyWindfall, type ApprovedFill } from "@/lib/data/allocations";
+import { setBaselineExclusion } from "@/lib/data/spending";
 import {
   ENVELOPE_KINDS,
   FUNDING_TYPES,
@@ -111,6 +113,41 @@ export async function reorderEnvelopeAction(
     return { error: e instanceof Error ? e.message : "Could not reorder." };
   }
   revalidatePath("/envelopes");
+  return { ok: true };
+}
+
+export async function acceptSuggestedTargetAction(
+  envelopeId: string,
+  targetAmount: number,
+): Promise<Result> {
+  const user = await requireUser();
+  if (!envelopeId) return { error: "Missing envelope." };
+  if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+    return { error: "No valid suggested target yet." };
+  }
+  try {
+    await setEnvelopeTarget(user.id, envelopeId, Math.round(targetAmount * 100) / 100);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not set the target." };
+  }
+  revalidatePath("/envelopes");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function setBaselineExclusionAction(
+  txnId: string,
+  exclude: boolean,
+): Promise<Result> {
+  const user = await requireUser();
+  if (!txnId) return { error: "Missing transaction." };
+  try {
+    await setBaselineExclusion(user.id, txnId, exclude);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update." };
+  }
+  revalidatePath("/envelopes");
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 

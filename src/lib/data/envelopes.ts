@@ -108,6 +108,23 @@ export async function updateEnvelope(
   if (!data || data.length === 0) throw new Error("That envelope couldn't be found.");
 }
 
+/** Set just an envelope's dollar target (e.g. accepting a suggested estimate). */
+export async function setEnvelopeTarget(
+  userId: string,
+  id: string,
+  targetAmount: number,
+): Promise<void> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("envelopes")
+    .update({ target_amount: targetAmount })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("That envelope couldn't be found.");
+}
+
 /** Soft-delete: envelopes are referenced by allocations, so we deactivate. */
 export async function deactivateEnvelope(userId: string, id: string): Promise<void> {
   const supabase = createServiceClient();
