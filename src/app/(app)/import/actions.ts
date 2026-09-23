@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/user";
 import { listCategories } from "@/lib/data/categories";
 import { insertImportedTransactions } from "@/lib/data/transactions";
-import { reconcileNewImports } from "@/lib/data/reconcile";
+import {
+  reconcileNewImports,
+  confirmProposedMatch,
+  type ProposedMatch,
+} from "@/lib/data/reconcile";
 import { parseStatement } from "@/lib/ai/parse-statement";
 import type { ImportMode, ParsedRow } from "@/lib/import-types";
 
@@ -58,7 +62,7 @@ export async function commitImportAction(input: {
   inserted?: number;
   skipped?: number;
   merged?: number;
-  proposed?: number;
+  proposals?: ProposedMatch[];
   error?: string;
 }> {
   const user = await requireUser();
@@ -81,7 +85,7 @@ export async function commitImportAction(input: {
     );
 
     // Auto-merge freshly-imported rows against open provisional entries.
-    const { merged, proposed } = await reconcileNewImports(
+    const { merged, proposals } = await reconcileNewImports(
       user.id,
       input.accountId,
       insertedRows,
@@ -89,10 +93,29 @@ export async function commitImportAction(input: {
 
     revalidatePath("/transactions");
     revalidatePath("/dashboard");
-    return { inserted, skipped, merged, proposed };
+    return { inserted, skipped, merged, proposals };
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Could not save the import.",
+    };
+  }
+}
+
+export async function confirmMatchAction(input: {
+  feedId: string;
+  manualId: string;
+}): Promise<{ ok?: true; error?: string }> {
+  const user = await requireUser();
+  if (!input.feedId || !input.manualId) return { error: "Missing match to confirm." };
+
+  try {
+    await confirmProposedMatch(user.id, input.feedId, input.manualId);
+    revalidatePath("/transactions");
+    revalidatePath("/dashboard");
+    return { ok: true };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not merge these transactions.",
     };
   }
 }
