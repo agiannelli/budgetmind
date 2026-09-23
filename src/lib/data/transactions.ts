@@ -123,6 +123,15 @@ function importHash(
  * skips rows whose (user_id, import_hash) already exists. `mode` records the
  * two-fidelity origin (bulk backfill vs. current). Returns inserted/skipped.
  */
+export type InsertedFeedRow = {
+  id: string;
+  occurred_date: string;
+  amount: number; // signed
+  type: TxnType;
+  merchant_raw: string | null;
+  category_id: string | null;
+};
+
 export async function insertImportedTransactions(
   userId: string,
   accountId: string,
@@ -134,8 +143,8 @@ export async function insertImportedTransactions(
     merchant: string;
     category_id: string | null;
   }[],
-): Promise<{ inserted: number; skipped: number }> {
-  if (rows.length === 0) return { inserted: 0, skipped: 0 };
+): Promise<{ inserted: number; skipped: number; insertedRows: InsertedFeedRow[] }> {
+  if (rows.length === 0) return { inserted: 0, skipped: 0, insertedRows: [] };
 
   const records = rows.map((r) => {
     const magnitude = Math.abs(r.amount);
@@ -158,13 +167,24 @@ export async function insertImportedTransactions(
   });
 
   const supabase = createServiceClient();
+  // ignoreDuplicates → the returned rows are exactly the newly inserted ones
+  // (re-imported duplicates are skipped), which is precisely what we reconcile.
   const { data, error } = await supabase
     .from("transactions")
     .upsert(records, { onConflict: "user_id,import_hash", ignoreDuplicates: true })
-    .select("id");
+    .select("id, occurred_date, amount, type, merchant_raw, category_id");
 
   if (error) throw new Error(error.message);
 
-  const inserted = data?.length ?? 0;
-  return { inserted, skipped: records.length - inserted };
+  const insertedRows: InsertedFeedRow[] = (data ?? []).map((r) => ({
+    id: r.id as string,
+    occurred_date: r.occurred_date as string,
+    amount: typeof r.amount === "string" ? Number(r.amount) : (r.amount as number),
+    type: r.type as TxnType,
+    merchant_raw: (r.merchant_raw as string | null) ?? null,
+    category_id: (r.category_id as string | null) ?? null,
+  }));
+
+  const inserted = insertedRows.length;
+  return { inserted, skipped: records.length - inserted, insertedRows };
 }
