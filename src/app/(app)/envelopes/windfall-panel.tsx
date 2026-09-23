@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { applyWindfallAction } from "./actions";
-import {
-  proposeWaterfall,
-  type WaterfallProposal,
-} from "@/lib/allocate/waterfall";
+import { proposeWaterfall } from "@/lib/allocate/waterfall";
 import type { Envelope } from "@/lib/envelope-types";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -28,37 +25,43 @@ const num = (s: string) => {
 
 export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
   const [amount, setAmount] = useState("");
-  const [proposal, setProposal] = useState<WaterfallProposal | null>(null);
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  // Only lines the user has hand-edited; everything else follows the engine's
+  // live suggestion. Cleared when the amount changes, so no effect is needed.
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ applied: number; total: number } | null>(null);
 
-  function propose() {
-    setError(null);
+  const amt = num(amount);
+  const proposal = amt > 0 ? proposeWaterfall(amt, envelopes) : null;
+
+  // Displayed value for a line = the user's edit if any, else the suggestion.
+  const lineValue = (id: string, suggested: number) =>
+    overrides[id] ?? String(suggested);
+
+  function changeAmount(v: string) {
+    setAmount(v);
+    setOverrides({});
     setDone(null);
-    const amt = num(amount);
-    if (amt <= 0) return setError("Enter an amount to allocate.");
-    const p = proposeWaterfall(amt, envelopes);
-    setProposal(p);
-    setAmounts(
-      Object.fromEntries(p.fills.map((f) => [f.envelopeId, String(f.amount)])),
-    );
+    setError(null);
   }
 
   function reset() {
     setAmount("");
-    setProposal(null);
-    setAmounts({});
+    setOverrides({});
     setError(null);
     setDone(null);
   }
 
   const allocated = proposal
-    ? proposal.fills.reduce((s, f) => s + num(amounts[f.envelopeId] ?? "0"), 0)
+    ? proposal.fills.reduce(
+        (s, f) => s + num(lineValue(f.envelopeId, f.amount)),
+        0,
+      )
     : 0;
-  const free = Math.round((num(amount) - allocated) * 100) / 100;
+  const free = Math.round((amt - allocated) * 100) / 100;
   const overAllocated = free < -0.005;
+  const nothingToAutoFill = proposal != null && proposal.totalFilled === 0;
 
   async function approve() {
     if (!proposal) return;
@@ -67,16 +70,15 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
     setPending(true);
     const fills = proposal.fills.map((f) => ({
       envelopeId: f.envelopeId,
-      amount: num(amounts[f.envelopeId] ?? "0"),
+      amount: num(lineValue(f.envelopeId, f.amount)),
       rationale: f.rationale || null,
     }));
     const res = await applyWindfallAction({ fills });
     setPending(false);
     if (res.error) return setError(res.error);
     setDone({ applied: res.applied ?? 0, total: res.total ?? 0 });
-    setProposal(null);
-    setAmounts({});
     setAmount("");
+    setOverrides({});
   }
 
   return (
@@ -87,8 +89,8 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
           Allocate a windfall
         </CardTitle>
         <CardDescription>
-          Money in — a vest, bonus, or spare cash. We&apos;ll propose a split
-          down your priority order; you approve or adjust.
+          Money in — a vest, bonus, or spare cash. Enter an amount and we&apos;ll
+          propose a split down your priority order; approve or adjust.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -109,28 +111,33 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
 
         {!done && (
           <>
-            <div className="flex items-end gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="windfall-amount">Amount</Label>
-                <Input
-                  id="windfall-amount"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder="6000"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-40"
-                />
-              </div>
-              <Button size="sm" onClick={propose} disabled={pending}>
-                Propose split
-              </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="windfall-amount">Amount</Label>
+              <Input
+                id="windfall-amount"
+                type="number"
+                step="0.01"
+                min="0"
+                inputMode="decimal"
+                placeholder="6000"
+                value={amount}
+                onChange={(e) => changeAmount(e.target.value)}
+                className="w-40"
+              />
             </div>
 
             {proposal && (
               <div className="space-y-3">
+                {nothingToAutoFill && (
+                  <p className="rounded-md bg-muted/60 p-3 text-xs text-muted-foreground">
+                    None of your envelopes has a dollar target yet, so there&apos;s
+                    nothing to fill automatically. Set a{" "}
+                    <span className="font-medium text-foreground">Target amount</span>{" "}
+                    on an envelope (Edit) to get a real suggestion — or just type
+                    amounts below to split it by hand.
+                  </p>
+                )}
+
                 <div className="space-y-2">
                   {proposal.fills.map((f) => (
                     <div key={f.envelopeId} className="flex items-center gap-3">
@@ -146,10 +153,10 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
                         step="0.01"
                         min="0"
                         inputMode="decimal"
-                        value={amounts[f.envelopeId] ?? "0"}
+                        value={lineValue(f.envelopeId, f.amount)}
                         onChange={(e) =>
-                          setAmounts((a) => ({
-                            ...a,
+                          setOverrides((o) => ({
+                            ...o,
                             [f.envelopeId]: e.target.value,
                           }))
                         }
@@ -173,11 +180,15 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
                     </span>
                   </span>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={approve} disabled={pending || overAllocated}>
+                    <Button
+                      size="sm"
+                      onClick={approve}
+                      disabled={pending || overAllocated || allocated <= 0}
+                    >
                       {pending ? "Applying…" : "Approve"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={reset} disabled={pending}>
-                      Cancel
+                      Clear
                     </Button>
                   </div>
                 </div>
