@@ -23,7 +23,13 @@ const num = (s: string) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
+export function WindfallPanel({
+  envelopes,
+  monthlyExpenses,
+}: {
+  envelopes: Envelope[];
+  monthlyExpenses: number;
+}) {
   const [amount, setAmount] = useState("");
   // Only lines the user has hand-edited; everything else follows the engine's
   // live suggestion. Cleared when the amount changes, so no effect is needed.
@@ -33,7 +39,7 @@ export function WindfallPanel({ envelopes }: { envelopes: Envelope[] }) {
   const [done, setDone] = useState<{ applied: number; total: number } | null>(null);
 
   const amt = num(amount);
-  const proposal = amt > 0 ? proposeWaterfall(amt, envelopes) : null;
+  const proposal = amt > 0 ? proposeWaterfall(amt, envelopes, monthlyExpenses) : null;
 
   // Displayed value for a line = the user's edit if any, else the suggestion.
   const lineValue = (id: string, suggested: number) =>

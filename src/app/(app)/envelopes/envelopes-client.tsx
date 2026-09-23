@@ -23,6 +23,7 @@ import {
   type CoverageTier,
   type EnvelopePreset,
 } from "@/lib/envelope-types";
+import { effectiveTarget } from "@/lib/allocate/waterfall";
 import { nativeSelectClass } from "@/lib/forms";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -92,9 +93,11 @@ const toInput = (d: Draft): EnvelopeInput => ({
 export function EnvelopesManager({
   envelopes,
   suggestions,
+  monthlyExpenses,
 }: {
   envelopes: Envelope[];
   suggestions: EnvelopePreset[];
+  monthlyExpenses: number;
 }) {
   // mode: null (viewing), "add", or an envelope id (editing)
   const [mode, setMode] = useState<string | null>(null);
@@ -206,6 +209,7 @@ export function EnvelopesManager({
             <EnvelopeCard
               key={e.id}
               envelope={e}
+              monthlyExpenses={monthlyExpenses}
               isFirst={i === 0}
               isLast={i === envelopes.length - 1}
               busy={busyId === e.id}
@@ -251,6 +255,7 @@ export function EnvelopesManager({
 
 function EnvelopeCard({
   envelope: e,
+  monthlyExpenses,
   isFirst,
   isLast,
   busy,
@@ -261,6 +266,7 @@ function EnvelopeCard({
   onRemove,
 }: {
   envelope: Envelope;
+  monthlyExpenses: number;
   isFirst: boolean;
   isLast: boolean;
   busy: boolean;
@@ -270,13 +276,14 @@ function EnvelopeCard({
   onDown: () => void;
   onRemove: () => void;
 }) {
-  const hasTarget =
-    (e.funding_type === "build_to_target" || e.funding_type === "refill_to_cap") &&
-    e.target_amount != null &&
-    e.target_amount > 0;
-  const pct = hasTarget
-    ? Math.min(100, Math.round((e.current_balance / (e.target_amount as number)) * 100))
-    : null;
+  const target =
+    e.funding_type === "build_to_target" || e.funding_type === "refill_to_cap"
+      ? effectiveTarget(e, monthlyExpenses)
+      : null;
+  const pct =
+    target != null && target > 0
+      ? Math.min(100, Math.round((e.current_balance / target) * 100))
+      : null;
 
   return (
     <div className="rounded-lg border p-4">
@@ -325,7 +332,9 @@ function EnvelopeCard({
             <span className="font-semibold tabular-nums">
               {formatCurrency(e.current_balance)}
             </span>{" "}
-            <span className="text-muted-foreground">{targetDescriptor(e)}</span>
+            <span className="text-muted-foreground">
+              {targetDescriptor(e, monthlyExpenses)}
+            </span>
           </div>
 
           {pct != null && (
@@ -363,7 +372,7 @@ function EnvelopeCard({
   );
 }
 
-function targetDescriptor(e: Envelope): string {
+function targetDescriptor(e: Envelope, monthlyExpenses: number): string {
   if (e.funding_type === "monthly_fund") {
     return e.monthly_contribution != null
       ? `· ${formatCurrency(e.monthly_contribution)}/mo`
@@ -375,7 +384,10 @@ function targetDescriptor(e: Envelope): string {
     return `of ${formatCurrency(e.target_amount)} ${cap}${by}`;
   }
   if (e.target_months != null && e.target_months > 0) {
-    return `· target: ${e.target_months} months of expenses`;
+    const computed = effectiveTarget(e, monthlyExpenses);
+    return computed != null
+      ? `of ~${formatCurrency(computed)} (${e.target_months} mo of expenses)`
+      : `· target: ${e.target_months} months of expenses`;
   }
   return "";
 }

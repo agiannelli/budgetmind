@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/user";
 import { listEnvelopes } from "@/lib/data/envelopes";
+import { estimateMonthlyExpenses } from "@/lib/data/spending";
 import { ENVELOPE_CATALOG } from "@/lib/envelope-types";
 import { EnvelopesManager } from "./envelopes-client";
 import { WindfallPanel } from "./windfall-panel";
@@ -17,7 +18,10 @@ export default async function EnvelopesPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const envelopes = await listEnvelopes(user.id);
+  const [envelopes, spending] = await Promise.all([
+    listEnvelopes(user.id),
+    estimateMonthlyExpenses(user.id),
+  ]);
 
   // Offer any standard envelope the user doesn't already have (match by name).
   const have = new Set(envelopes.map((e) => e.name.trim().toLowerCase()));
@@ -35,7 +39,12 @@ export default async function EnvelopesPage() {
         </p>
       </div>
 
-      {envelopes.length > 0 && <WindfallPanel envelopes={envelopes} />}
+      {envelopes.length > 0 && (
+        <WindfallPanel
+          envelopes={envelopes}
+          monthlyExpenses={spending.monthlyExpenses}
+        />
+      )}
 
       <Card>
         <CardHeader>
@@ -47,7 +56,11 @@ export default async function EnvelopesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <EnvelopesManager envelopes={envelopes} suggestions={suggestions} />
+          <EnvelopesManager
+            envelopes={envelopes}
+            suggestions={suggestions}
+            monthlyExpenses={spending.monthlyExpenses}
+          />
         </CardContent>
       </Card>
     </div>

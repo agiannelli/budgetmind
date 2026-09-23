@@ -27,17 +27,41 @@ function cents(n: number): number {
 }
 
 /**
- * How much an envelope can still absorb, and null when it has no defined
- * capacity (e.g. a build-to-target with no dollar target yet — we don't invent
- * one, we just propose nothing and let the user bump it by hand).
+ * An envelope's effective dollar target: its explicit `target_amount`, or — for
+ * a build-to-target goal expressed in months (e.g. the emergency fund) — the
+ * months × estimated monthly spend. Null when neither is available.
  */
-export function envelopeRoom(e: Envelope): number | null {
+export function effectiveTarget(
+  e: Envelope,
+  monthlyExpenses?: number,
+): number | null {
+  if (e.target_amount != null) return e.target_amount;
+  if (
+    e.funding_type === "build_to_target" &&
+    e.target_months != null &&
+    monthlyExpenses != null &&
+    monthlyExpenses > 0
+  ) {
+    return cents(e.target_months * monthlyExpenses);
+  }
+  return null;
+}
+
+/**
+ * How much an envelope can still absorb, and null when it has no defined
+ * capacity (a build-to-target with no dollar/months target yet — we don't
+ * invent one, we let the user bump it by hand).
+ */
+export function envelopeRoom(e: Envelope, monthlyExpenses?: number): number | null {
   switch (e.funding_type) {
     case "monthly_fund":
       return e.monthly_contribution != null
         ? Math.max(0, e.monthly_contribution)
         : null;
-    case "build_to_target":
+    case "build_to_target": {
+      const target = effectiveTarget(e, monthlyExpenses);
+      return target != null ? Math.max(0, cents(target - e.current_balance)) : null;
+    }
     case "refill_to_cap":
       return e.target_amount != null
         ? Math.max(0, cents(e.target_amount - e.current_balance))
@@ -47,7 +71,11 @@ export function envelopeRoom(e: Envelope): number | null {
   }
 }
 
-function rationaleFor(e: Envelope, room: number | null): string {
+function rationaleFor(
+  e: Envelope,
+  room: number | null,
+  monthlyExpenses?: number,
+): string {
   if (e.funding_type === "monthly_fund") return "Monthly set-aside";
   if (e.funding_type === "refill_to_cap") {
     return e.target_amount != null
@@ -57,7 +85,10 @@ function rationaleFor(e: Envelope, room: number | null): string {
   // build_to_target
   if (e.target_amount != null) return `Toward the ${money(e.target_amount)} target`;
   if (e.target_months != null) {
-    return `Set a dollar target to auto-fill (currently ${e.target_months} mo)`;
+    const target = effectiveTarget(e, monthlyExpenses);
+    return target != null
+      ? `Toward ~${money(target)} (${e.target_months} mo of spending)`
+      : `Set a dollar target to auto-fill (currently ${e.target_months} mo)`;
   }
   return room == null ? "No target set — add by hand" : "";
 }
@@ -73,12 +104,13 @@ function money(n: number): string {
 export function proposeWaterfall(
   amount: number,
   envelopes: Envelope[],
+  monthlyExpenses?: number,
 ): WaterfallProposal {
   let remaining = cents(Math.max(0, amount));
   const fills: WaterfallFill[] = [];
 
   for (const e of envelopes) {
-    const room = envelopeRoom(e);
+    const room = envelopeRoom(e, monthlyExpenses);
     const fill = room == null ? 0 : cents(Math.min(room, remaining));
     remaining = cents(remaining - fill);
     fills.push({
@@ -86,7 +118,7 @@ export function proposeWaterfall(
       name: e.name,
       amount: fill,
       room,
-      rationale: rationaleFor(e, room),
+      rationale: rationaleFor(e, room, monthlyExpenses),
     });
   }
 
