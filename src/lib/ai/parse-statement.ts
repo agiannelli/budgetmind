@@ -22,17 +22,42 @@ export type ParsedTxn = {
 };
 
 const UNCATEGORIZED = "Uncategorized";
+// Rows per Claude call. Kept well under the ~250-row / 16k-output-token ceiling
+// so a single chunk never truncates the structured JSON.
+const CHUNK_LINES = 150;
 
 /**
- * Parse pasted/uploaded statement text into structured transactions with Claude.
- * `categoryNames` constrains the category choice to the user's own list.
+ * Split statement text into chunks small enough that each parse stays under the
+ * model's output-token cap. A detected header line is repeated on every chunk so
+ * Claude keeps the column context.
  */
-export async function parseStatement(input: {
-  text: string;
-  categoryNames: string[];
-}): Promise<ParsedTxn[]> {
-  const categories = [...input.categoryNames, UNCATEGORIZED];
+function splitChunks(text: string): string[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length === 0) return [];
 
+  const first = lines[0];
+  const looksLikeHeader =
+    /(date|description|amount|balance|posted|debit|credit|transaction|merchant)/i.test(
+      first,
+    ) && !/\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}/.test(first);
+
+  const header = looksLikeHeader ? first : null;
+  const dataLines = looksLikeHeader ? lines.slice(1) : lines;
+
+  if (dataLines.length <= CHUNK_LINES) return [text];
+
+  const chunks: string[] = [];
+  for (let i = 0; i < dataLines.length; i += CHUNK_LINES) {
+    const slice = dataLines.slice(i, i + CHUNK_LINES).join("\n");
+    chunks.push(header ? `${header}\n${slice}` : slice);
+  }
+  return chunks;
+}
+
+async function parseChunk(
+  text: string,
+  categories: string[],
+): Promise<ParsedTxn[]> {
   const schema = z.object({
     transactions: z.array(
       z.object({
@@ -59,20 +84,45 @@ export async function parseStatement(input: {
     "Ignore header rows, running balances, subtotals, and summary lines. Do not invent transactions.",
   ].join("\n");
 
+  // Thinking disabled: this is mechanical extraction, and adaptive thinking
+  // would otherwise eat into max_tokens and truncate the JSON on large inputs.
   const res = await client().messages.parse({
     model: "claude-sonnet-5",
     max_tokens: 16000,
+    thinking: { type: "disabled" },
     system,
-    messages: [{ role: "user", content: input.text }],
+    messages: [{ role: "user", content: text }],
     output_config: { format: zodOutputFormat(schema) },
   });
 
   if (res.stop_reason === "refusal") {
     throw new Error("The parser declined to process this content.");
   }
+  if (res.stop_reason === "max_tokens") {
+    throw new Error(
+      "That batch was too large to parse in one pass — try a smaller date range.",
+    );
+  }
   if (!res.parsed_output) {
     throw new Error("Could not parse the statement into transactions.");
   }
-
   return res.parsed_output.transactions;
+}
+
+/**
+ * Parse pasted/uploaded statement text into structured transactions with Claude.
+ * Large inputs are auto-chunked so the structured JSON never truncates.
+ */
+export async function parseStatement(input: {
+  text: string;
+  categoryNames: string[];
+}): Promise<ParsedTxn[]> {
+  const categories = [...input.categoryNames, UNCATEGORIZED];
+  const chunks = splitChunks(input.text);
+
+  const results: ParsedTxn[] = [];
+  for (const chunk of chunks) {
+    results.push(...(await parseChunk(chunk, categories)));
+  }
+  return results;
 }
