@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/user";
 import { listEnvelopes } from "@/lib/data/envelopes";
 import { ENVELOPE_CATALOG } from "@/lib/envelope-types";
 import { EnvelopesManager } from "./envelopes-client";
+import { WindfallPanel } from "./windfall-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export default async function EnvelopesPage() {
           engine fills and pulls from.
         </p>
       </div>
+
+      {envelopes.length > 0 && <WindfallPanel envelopes={envelopes} />}
 
       <Card>
         <CardHeader>
