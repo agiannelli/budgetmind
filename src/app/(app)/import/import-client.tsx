@@ -42,9 +42,12 @@ export function ImportClient({
   const [rows, setRows] = useState<Row[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ inserted: number; skipped: number } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{
+    inserted: number;
+    skipped: number;
+    merged: number;
+    proposed: number;
+  } | null>(null);
 
   const catById = new Map(categories.map((c) => [c.id, c.name]));
 
@@ -80,7 +83,12 @@ export function ImportClient({
     const res = await commitImportAction({ accountId, mode, rows: included });
     setPending(false);
     if (res.error) return setError(res.error);
-    setResult({ inserted: res.inserted ?? 0, skipped: res.skipped ?? 0 });
+    setResult({
+      inserted: res.inserted ?? 0,
+      skipped: res.skipped ?? 0,
+      merged: res.merged ?? 0,
+      proposed: res.proposed ?? 0,
+    });
     setPhase("done");
   }
 
@@ -111,6 +119,21 @@ export function ImportClient({
           )}
           .
         </p>
+        {result.merged > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Auto-merged{" "}
+            <span className="font-medium text-foreground">{result.merged}</span> of
+            your provisional entr{result.merged === 1 ? "y" : "ies"} that these
+            covered — no duplicates.
+          </p>
+        )}
+        {result.proposed > 0 && (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{result.proposed}</span>{" "}
+            possible match{result.proposed === 1 ? "" : "es"} to a provisional entry
+            need a closer look — we left both in place for now.
+          </p>
+        )}
         <div className="flex gap-3">
           <Button asChild>
             <Link href="/transactions">View transactions</Link>

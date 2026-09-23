@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/user";
 import { listCategories } from "@/lib/data/categories";
 import { insertImportedTransactions } from "@/lib/data/transactions";
+import { reconcileNewImports } from "@/lib/data/reconcile";
 import { parseStatement } from "@/lib/ai/parse-statement";
 import type { ImportMode, ParsedRow } from "@/lib/import-types";
 
@@ -53,14 +54,20 @@ export async function commitImportAction(input: {
   accountId: string;
   mode: ImportMode;
   rows: ParsedRow[];
-}): Promise<{ inserted?: number; skipped?: number; error?: string }> {
+}): Promise<{
+  inserted?: number;
+  skipped?: number;
+  merged?: number;
+  proposed?: number;
+  error?: string;
+}> {
   const user = await requireUser();
 
   if (!input.accountId) return { error: "Choose an account for this import." };
   if (!input.rows?.length) return { error: "Nothing selected to import." };
 
   try {
-    const { inserted, skipped } = await insertImportedTransactions(
+    const { inserted, skipped, insertedRows } = await insertImportedTransactions(
       user.id,
       input.accountId,
       input.mode,
@@ -73,9 +80,16 @@ export async function commitImportAction(input: {
       })),
     );
 
+    // Auto-merge freshly-imported rows against open provisional entries.
+    const { merged, proposed } = await reconcileNewImports(
+      user.id,
+      input.accountId,
+      insertedRows,
+    );
+
     revalidatePath("/transactions");
     revalidatePath("/dashboard");
-    return { inserted, skipped };
+    return { inserted, skipped, merged, proposed };
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Could not save the import.",
