@@ -12,6 +12,7 @@ import {
   ENVELOPE_KINDS,
   FUNDING_TYPES,
   COVERAGE_TIERS,
+  ENVELOPE_CATALOG,
   type EnvelopeInput,
 } from "@/lib/envelope-types";
 
@@ -67,6 +68,30 @@ export async function editEnvelopeAction(
     await updateEnvelope(user.id, id, input);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not save changes." };
+  }
+  revalidatePath("/envelopes");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function addStarterEnvelopeAction(key: string): Promise<Result> {
+  const user = await requireUser();
+  const preset = ENVELOPE_CATALOG.find((p) => p.key === key);
+  if (!preset) return { error: "Unknown envelope." };
+
+  try {
+    await createEnvelope(user.id, {
+      name: preset.name,
+      kind: preset.kind,
+      funding_type: preset.funding_type,
+      target_months: preset.target_months ?? null,
+      monthly_contribution: preset.monthly_contribution ?? null,
+      current_balance: 0,
+      is_protected: preset.is_protected,
+      coverage: preset.coverage,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not add envelope." };
   }
   revalidatePath("/envelopes");
   revalidatePath("/dashboard");

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUp, ArrowDown, Lock } from "lucide-react";
+import { ArrowUp, ArrowDown, Lock, Plus } from "lucide-react";
 import {
   createEnvelopeAction,
   editEnvelopeAction,
   reorderEnvelopeAction,
   deactivateEnvelopeAction,
+  addStarterEnvelopeAction,
 } from "./actions";
 import {
   ENVELOPE_KINDS,
@@ -20,6 +21,7 @@ import {
   type EnvelopeKind,
   type FundingType,
   type CoverageTier,
+  type EnvelopePreset,
 } from "@/lib/envelope-types";
 import { nativeSelectClass } from "@/lib/forms";
 import { formatCurrency } from "@/lib/format";
@@ -87,13 +89,26 @@ const toInput = (d: Draft): EnvelopeInput => ({
   notes: d.notes,
 });
 
-export function EnvelopesManager({ envelopes }: { envelopes: Envelope[] }) {
+export function EnvelopesManager({
+  envelopes,
+  suggestions,
+}: {
+  envelopes: Envelope[];
+  suggestions: EnvelopePreset[];
+}) {
   // mode: null (viewing), "add", or an envelope id (editing)
   const [mode, setMode] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [addingKey, setAddingKey] = useState<string | null>(null);
+
+  async function addStarter(key: string) {
+    setAddingKey(key);
+    await addStarterEnvelopeAction(key);
+    setAddingKey(null);
+  }
 
   function openAdd() {
     setError(null);
@@ -203,6 +218,33 @@ export function EnvelopesManager({ envelopes }: { envelopes: Envelope[] }) {
           );
         })}
       </div>
+
+      {mode === null && suggestions.length > 0 && (
+        <div className="space-y-2 border-t pt-4">
+          <p className="text-sm font-medium">Suggested envelopes</p>
+          <p className="text-xs text-muted-foreground">
+            Common jobs for money. Tap to add one — you can tune it after.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {suggestions.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => addStarter(s.key)}
+                disabled={addingKey !== null}
+                className="group flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:opacity-50"
+                title={s.blurb}
+              >
+                <Plus className="size-3.5 text-muted-foreground group-hover:text-foreground" />
+                <span>{s.name}</span>
+                {addingKey === s.key && (
+                  <span className="text-xs text-muted-foreground">adding…</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

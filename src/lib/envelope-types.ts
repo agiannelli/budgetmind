@@ -69,3 +69,118 @@ export type EnvelopeInput = {
   coverage: CoverageTier;
   notes?: string | null;
 };
+
+/**
+ * The standard envelope catalog. The `core` entries are seeded for new accounts
+ * (see the seed migration); every entry is also offered in-app as a one-tap
+ * "Suggested envelope" for any that the user doesn't already have — so existing
+ * users can pick up the rest without a forced insert.
+ */
+export type EnvelopePreset = {
+  key: string;
+  name: string;
+  kind: EnvelopeKind;
+  funding_type: FundingType;
+  coverage: CoverageTier;
+  is_protected: boolean;
+  target_months?: number | null;
+  monthly_contribution?: number | null;
+  core: boolean;
+  blurb: string;
+};
+
+export const ENVELOPE_CATALOG: EnvelopePreset[] = [
+  {
+    key: "emergency_fund",
+    name: "Emergency Fund",
+    kind: "emergency_fund",
+    funding_type: "build_to_target",
+    coverage: "untouchable",
+    is_protected: true,
+    target_months: 6,
+    core: true,
+    blurb: "6 months of expenses",
+  },
+  {
+    key: "annual_bills",
+    name: "Annual Bills & Insurance",
+    kind: "sinking_fund",
+    funding_type: "monthly_fund",
+    coverage: "flag_to_borrow",
+    is_protected: false,
+    monthly_contribution: 0,
+    core: true,
+    blurb: "Smooth yearly premiums & renewals",
+  },
+  {
+    key: "health",
+    name: "Health & Medical",
+    kind: "sinking_fund",
+    funding_type: "build_to_target",
+    coverage: "flex",
+    is_protected: false,
+    core: true,
+    blurb: "Deductible & out-of-pocket buffer",
+  },
+  {
+    key: "travel",
+    name: "Travel",
+    kind: "sinking_fund",
+    funding_type: "build_to_target",
+    coverage: "flex",
+    is_protected: false,
+    core: true,
+    blurb: "Trips & vacations",
+  },
+  {
+    key: "gifts",
+    name: "Gifts & Holidays",
+    kind: "sinking_fund",
+    funding_type: "refill_to_cap",
+    coverage: "flex",
+    is_protected: false,
+    core: true,
+    blurb: "Resets each year",
+  },
+  {
+    key: "tax_reserve",
+    name: "Tax Reserve",
+    kind: "tax_reserve",
+    funding_type: "build_to_target",
+    coverage: "untouchable",
+    is_protected: true,
+    core: false,
+    blurb: "For variable / 1099 income",
+  },
+  {
+    key: "auto",
+    name: "Auto & Transport",
+    kind: "sinking_fund",
+    funding_type: "refill_to_cap",
+    coverage: "flex",
+    is_protected: false,
+    core: false,
+    blurb: "Maintenance, repairs, registration",
+  },
+  {
+    key: "home",
+    name: "Home Maintenance",
+    kind: "sinking_fund",
+    funding_type: "refill_to_cap",
+    coverage: "flex",
+    is_protected: false,
+    core: false,
+    blurb: "Repairs & appliances",
+  },
+  {
+    key: "invest",
+    name: "Invest",
+    kind: "invest",
+    funding_type: "monthly_fund",
+    coverage: "flag_to_borrow",
+    is_protected: false,
+    monthly_contribution: 0,
+    core: false,
+    blurb: "Monthly contribution",
+  },
+];
