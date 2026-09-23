@@ -15,7 +15,9 @@ export type Transaction = {
   notes: string | null;
   status: string;
   source: string;
+  category_id: string | null;
   category_name: string | null;
+  account_id: string;
   account_label: string;
 };
 
@@ -28,6 +30,8 @@ type TxnRow = {
   notes: string | null;
   status: string;
   source: string;
+  category_id: string | null;
+  account_id: string;
   categories: { name: string } | null;
   accounts: Pick<Account, "name" | "nickname"> | null;
 };
@@ -40,7 +44,7 @@ export async function listTransactions(
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, occurred_date, amount, type, merchant_raw, notes, status, source, categories(name), accounts(name, nickname)",
+      "id, occurred_date, amount, type, merchant_raw, notes, status, source, category_id, account_id, categories(name), accounts(name, nickname)",
     )
     .eq("user_id", userId)
     .is("superseded_by", null)
@@ -59,7 +63,9 @@ export async function listTransactions(
     notes: r.notes,
     status: r.status,
     source: r.source,
+    category_id: r.category_id,
     category_name: r.categories?.name ?? null,
+    account_id: r.account_id,
     account_label: r.accounts ? accountLabel(r.accounts) : "—",
   }));
 }
@@ -102,6 +108,54 @@ export async function createTransaction(
   });
 
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Edit an existing transaction. Like `createTransaction`, the UI supplies a
+ * positive magnitude and we re-derive the sign and spending exclusion from the
+ * type. Scoped to the user's own, non-superseded rows so retired (merged-away)
+ * entries can't be edited back into the ledger.
+ */
+export async function updateTransaction(
+  userId: string,
+  id: string,
+  input: {
+    account_id: string;
+    occurred_date: string;
+    amount: number;
+    type: TxnType;
+    merchant?: string | null;
+    category_id?: string | null;
+    notes?: string | null;
+  },
+): Promise<void> {
+  const magnitude = Math.abs(input.amount);
+  const signed = input.type === "income" ? magnitude : -magnitude;
+  const excluded = input.type === "transfer" || input.type === "savings";
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({
+      account_id: input.account_id,
+      occurred_date: input.occurred_date,
+      amount: signed,
+      type: input.type,
+      is_excluded_from_spending: excluded,
+      merchant_raw: input.merchant?.trim() || null,
+      category_id: input.category_id || null,
+      notes: input.notes?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .is("superseded_by", null)
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) {
+    throw new Error("That transaction couldn't be found.");
+  }
 }
 
 /** Stable per-row key for idempotent re-imports (same statement never double-counts). */
