@@ -8,6 +8,7 @@ import {
   deactivateEnvelope,
   reorderEnvelope,
 } from "@/lib/data/envelopes";
+import { applyWindfall, type ApprovedFill } from "@/lib/data/allocations";
 import {
   ENVELOPE_KINDS,
   FUNDING_TYPES,
@@ -111,6 +112,34 @@ export async function reorderEnvelopeAction(
   }
   revalidatePath("/envelopes");
   return { ok: true };
+}
+
+export async function applyWindfallAction(input: {
+  fills: ApprovedFill[];
+}): Promise<{ ok?: true; applied?: number; total?: number; error?: string }> {
+  const user = await requireUser();
+  const fills = input.fills ?? [];
+
+  for (const f of fills) {
+    if (!f.envelopeId) return { error: "Missing envelope in the split." };
+    if (!Number.isFinite(f.amount) || f.amount < 0) {
+      return { error: "Each amount must be 0 or more." };
+    }
+  }
+  if (!fills.some((f) => f.amount > 0)) {
+    return { error: "Nothing to allocate — enter at least one amount." };
+  }
+
+  try {
+    const { applied, total } = await applyWindfall(user.id, fills);
+    revalidatePath("/envelopes");
+    revalidatePath("/dashboard");
+    return { ok: true, applied, total };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not apply the allocation.",
+    };
+  }
 }
 
 export async function deactivateEnvelopeAction(id: string): Promise<Result> {
