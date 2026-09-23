@@ -7,10 +7,11 @@ import {
 } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/user";
 import { listEnvelopes } from "@/lib/data/envelopes";
-import { estimateMonthlyExpenses } from "@/lib/data/spending";
+import { estimateMonthlyExpenses, listLargePurchases } from "@/lib/data/spending";
 import { ENVELOPE_CATALOG } from "@/lib/envelope-types";
 import { EnvelopesManager } from "./envelopes-client";
 import { WindfallPanel } from "./windfall-panel";
+import { EstimateReview } from "./estimate-review";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,10 @@ export default async function EnvelopesPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const [envelopes, spending] = await Promise.all([
+  const [envelopes, spending, largePurchases] = await Promise.all([
     listEnvelopes(user.id),
     estimateMonthlyExpenses(user.id),
+    listLargePurchases(user.id),
   ]);
 
   // Offer any standard envelope the user doesn't already have (match by name).
@@ -38,6 +40,13 @@ export default async function EnvelopesPage() {
           engine fills and pulls from.
         </p>
       </div>
+
+      <EstimateReview
+        monthlyExpenses={spending.monthlyExpenses}
+        monthsObserved={spending.monthsObserved}
+        excludedCount={spending.excludedCount}
+        purchases={largePurchases}
+      />
 
       {envelopes.length > 0 && (
         <WindfallPanel
