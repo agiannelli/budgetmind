@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/user";
-import { createTransaction, updateTransaction } from "@/lib/data/transactions";
+import {
+  createTransaction,
+  updateTransaction,
+  searchTransactions,
+  type Transaction,
+  type TxnFilters,
+} from "@/lib/data/transactions";
 import { TXN_TYPES, type TxnType } from "@/lib/data/enums";
 import type { FormState } from "@/lib/forms";
 
@@ -44,6 +50,31 @@ export async function addTransactionAction(
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+const PAGE_SIZE = 50;
+
+export async function searchTransactionsAction(input: {
+  filters: TxnFilters;
+  offset: number;
+}): Promise<{ rows: Transaction[]; total: number; error?: string }> {
+  const user = await requireUser();
+  const offset = Math.max(0, Math.floor(input.offset || 0));
+  try {
+    const { rows, total } = await searchTransactions(
+      user.id,
+      input.filters ?? {},
+      PAGE_SIZE,
+      offset,
+    );
+    return { rows, total };
+  } catch (e) {
+    return {
+      rows: [],
+      total: 0,
+      error: e instanceof Error ? e.message : "Could not load transactions.",
+    };
+  }
 }
 
 export async function editTransactionAction(input: {
