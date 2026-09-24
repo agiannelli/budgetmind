@@ -36,25 +36,11 @@ type TxnRow = {
   accounts: Pick<Account, "name" | "nickname"> | null;
 };
 
-export async function listTransactions(
-  userId: string,
-  limit = 100,
-): Promise<Transaction[]> {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("transactions")
-    .select(
-      "id, occurred_date, amount, type, merchant_raw, notes, status, source, category_id, account_id, categories(name), accounts(name, nickname)",
-    )
-    .eq("user_id", userId)
-    .is("superseded_by", null)
-    .order("occurred_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
+const TXN_SELECT =
+  "id, occurred_date, amount, type, merchant_raw, notes, status, source, category_id, account_id, categories(name), accounts(name, nickname)";
 
-  if (error) throw new Error(error.message);
-
-  return ((data ?? []) as unknown as TxnRow[]).map((r) => ({
+function mapTxnRow(r: TxnRow): Transaction {
+  return {
     id: r.id,
     occurred_date: r.occurred_date,
     amount: typeof r.amount === "string" ? Number(r.amount) : r.amount,
@@ -67,7 +53,71 @@ export async function listTransactions(
     category_name: r.categories?.name ?? null,
     account_id: r.account_id,
     account_label: r.accounts ? accountLabel(r.accounts) : "—",
-  }));
+  };
+}
+
+export async function listTransactions(
+  userId: string,
+  limit = 100,
+): Promise<Transaction[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(TXN_SELECT)
+    .eq("user_id", userId)
+    .is("superseded_by", null)
+    .order("occurred_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as TxnRow[]).map(mapTxnRow);
+}
+
+export type TxnFilters = {
+  q?: string; // merchant text (case-insensitive contains)
+  categoryId?: string;
+  accountId?: string;
+  type?: TxnType;
+  from?: string; // YYYY-MM-DD (inclusive)
+  to?: string; // YYYY-MM-DD (inclusive)
+};
+
+/**
+ * Filtered, paginated transaction search over the user's live (non-superseded)
+ * rows. Returns the page plus the total match count so the UI can page/look
+ * back through the full history, not just the most recent.
+ */
+export async function searchTransactions(
+  userId: string,
+  filters: TxnFilters,
+  limit: number,
+  offset: number,
+): Promise<{ rows: Transaction[]; total: number }> {
+  const supabase = createServiceClient();
+  let query = supabase
+    .from("transactions")
+    .select(TXN_SELECT, { count: "exact" })
+    .eq("user_id", userId)
+    .is("superseded_by", null);
+
+  if (filters.q) query = query.ilike("merchant_raw", `%${filters.q}%`);
+  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.accountId) query = query.eq("account_id", filters.accountId);
+  if (filters.type) query = query.eq("type", filters.type);
+  if (filters.from) query = query.gte("occurred_date", filters.from);
+  if (filters.to) query = query.lte("occurred_date", filters.to);
+
+  const { data, error, count } = await query
+    .order("occurred_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw new Error(error.message);
+  return {
+    rows: ((data ?? []) as unknown as TxnRow[]).map(mapTxnRow),
+    total: count ?? 0,
+  };
 }
 
 /**

@@ -9,20 +9,22 @@ import {
 import { getCurrentUser } from "@/lib/user";
 import { listAccounts, accountLabel } from "@/lib/data/accounts";
 import { listCategories } from "@/lib/data/categories";
-import { listTransactions } from "@/lib/data/transactions";
+import { searchTransactions } from "@/lib/data/transactions";
 import { AddTransactionForm } from "./add-transaction-form";
-import { RecentTransactions } from "./recent-transactions";
+import { TransactionsBrowser } from "./recent-transactions";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
 
 export default async function TransactionsPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const [accounts, categories, transactions] = await Promise.all([
+  const [accounts, categories, firstPage] = await Promise.all([
     listAccounts(user.id),
     listCategories(user.id),
-    listTransactions(user.id),
+    searchTransactions(user.id, {}, PAGE_SIZE, 0),
   ]);
 
   return (
@@ -76,19 +78,18 @@ export default async function TransactionsPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent</CardTitle>
-          <CardDescription>
-            {transactions.length === 0
-              ? "Nothing here yet."
-              : `Showing your ${transactions.length} most recent.`}
-          </CardDescription>
-        </CardHeader>
-        {transactions.length > 0 && (
+      {accounts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">History</CardTitle>
+            <CardDescription>
+              Search and look back through everything, not just the latest.
+            </CardDescription>
+          </CardHeader>
           <CardContent>
-            <RecentTransactions
-              transactions={transactions}
+            <TransactionsBrowser
+              initialRows={firstPage.rows}
+              initialTotal={firstPage.total}
               accounts={accounts.map((a) => ({ id: a.id, label: accountLabel(a) }))}
               categories={categories.map((c) => ({
                 id: c.id,
@@ -97,8 +98,8 @@ export default async function TransactionsPage() {
               }))}
             />
           </CardContent>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
