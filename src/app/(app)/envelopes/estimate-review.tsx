@@ -18,11 +18,15 @@ export function EstimateReview({
   monthlyExpenses,
   monthsObserved,
   excludedCount,
+  recurringMonthly,
+  variableMonthly,
   purchases,
 }: {
   monthlyExpenses: number;
   monthsObserved: number;
   excludedCount: number;
+  recurringMonthly: number;
+  variableMonthly: number;
   purchases: LargePurchase[];
 }) {
   const [open, setOpen] = useState(false);
@@ -65,6 +69,13 @@ export function EstimateReview({
             </span>
           )}
         </p>
+
+        {monthlyExpenses > 0 && recurringMonthly > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {formatCurrency(recurringMonthly)}/mo recurring bills (amortized) +{" "}
+            {formatCurrency(variableMonthly)}/mo variable spend.
+          </p>
+        )}
 
         {purchases.length > 0 && (
           <div className="space-y-2">

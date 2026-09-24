@@ -1,11 +1,16 @@
 import "server-only";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { normalizeMerchant } from "@/lib/reconcile/matcher";
+import { listRecurringItems } from "@/lib/data/recurring";
+import { monthlyEquivalent } from "@/lib/recurring-types";
 
 export type SpendingEstimate = {
-  monthlyExpenses: number; // average spend per observed month (0 if no data)
-  monthsObserved: number; // distinct calendar months with spending
-  excludedCount: number; // one-off purchases the user has excluded
+  monthlyExpenses: number; // total: amortized recurring + variable average
+  monthsObserved: number;
+  excludedCount: number; // one-off purchases the user excluded
+  recurringMonthly: number; // amortized recurring bills
+  variableMonthly: number; // averaged variable (non-recurring) spend
 };
 
 export type LargePurchase = {
@@ -14,8 +19,8 @@ export type LargePurchase = {
   merchant: string | null;
   amount: number; // magnitude (positive)
   category_name: string | null;
-  occurrences: number; // times this merchant appears in spending (recurrence hint)
-  excluded: boolean; // currently excluded from the baseline
+  occurrences: number;
+  excluded: boolean;
 };
 
 type SpendRow = {
@@ -29,8 +34,8 @@ type SpendRow = {
 
 const abs = (v: number | string) =>
   Math.abs(typeof v === "string" ? Number(v) : v);
+const cents = (n: number) => Math.round(n * 100) / 100;
 
-/** All of the user's real spending rows (expense, not a transfer/savings, live). */
 async function spendingRows(userId: string): Promise<SpendRow[]> {
   const supabase = createServiceClient();
   const { data, error } = await supabase
@@ -47,50 +52,73 @@ async function spendingRows(userId: string): Promise<SpendRow[]> {
 }
 
 /**
- * Estimate average monthly spending — used to turn a months-based goal (e.g.
- * "6 months of expenses") into a dollar target. Excludes one-off purchases the
- * user flagged (`exclude_from_baseline`) so a car or a vacation doesn't inflate
- * the recurring number. Averages over the distinct calendar months observed.
+ * Estimate average monthly spending, used to size months-based goals. The
+ * baseline is: amortized recurring bills (a quarterly tax counts as a third of
+ * itself each month, a yearly insurance a twelfth) plus the average of variable
+ * spend. Transactions matched by a recurring item are pulled out of the variable
+ * average so they aren't counted twice, and one-offs the user flagged are
+ * dropped entirely.
  */
 export async function estimateMonthlyExpenses(
   userId: string,
 ): Promise<SpendingEstimate> {
-  const rows = await spendingRows(userId);
+  const [rows, recurring] = await Promise.all([
+    spendingRows(userId),
+    listRecurringItems(userId),
+  ]);
+
+  const recurringMonthly = cents(
+    recurring.reduce((s, r) => s + monthlyEquivalent(r.amount, r.cadence), 0),
+  );
+  const matchSet = new Set(
+    recurring.map((r) => r.match_merchant).filter(Boolean) as string[],
+  );
+
   const excludedCount = rows.filter((r) => r.exclude_from_baseline).length;
   const baseline = rows.filter((r) => !r.exclude_from_baseline);
-  if (baseline.length === 0) {
-    return { monthlyExpenses: 0, monthsObserved: 0, excludedCount };
-  }
 
-  const months = new Set<string>();
-  let total = 0;
-  for (const r of baseline) {
-    total += abs(r.amount);
-    months.add(r.occurred_date.slice(0, 7)); // YYYY-MM
-  }
+  const months = new Set(baseline.map((r) => r.occurred_date.slice(0, 7)));
   const monthsObserved = months.size;
-  const monthlyExpenses =
-    monthsObserved > 0 ? Math.round((total / monthsObserved) * 100) / 100 : 0;
-  return { monthlyExpenses, monthsObserved, excludedCount };
+
+  const variableTotal = baseline
+    .filter((r) => !matchSet.has(normalizeMerchant(r.merchant_raw)))
+    .reduce((s, r) => s + abs(r.amount), 0);
+  const variableMonthly =
+    monthsObserved > 0 ? cents(variableTotal / monthsObserved) : 0;
+
+  return {
+    monthlyExpenses: cents(recurringMonthly + variableMonthly),
+    monthsObserved,
+    excludedCount,
+    recurringMonthly,
+    variableMonthly,
+  };
 }
 
 /**
- * The user's largest purchases, as candidates to review for one-off exclusion.
- * Returns the biggest by amount with a recurrence hint (how many times the same
- * merchant appears) so a monthly mortgage reads differently from a one-time buy.
+ * Largest purchases to review for one-off exclusion. Recurring-item matches are
+ * left out (they're handled as bills, not one-offs); a recurrence hint helps the
+ * user tell a mortgage from a one-time buy.
  */
 export async function listLargePurchases(
   userId: string,
   limit = 20,
 ): Promise<LargePurchase[]> {
-  const rows = await spendingRows(userId);
+  const [rows, recurring] = await Promise.all([
+    spendingRows(userId),
+    listRecurringItems(userId),
+  ]);
   if (rows.length === 0) return [];
+  const matchSet = new Set(
+    recurring.map((r) => r.match_merchant).filter(Boolean) as string[],
+  );
 
-  const key = (r: SpendRow) => (r.merchant_raw ?? "").trim().toLowerCase();
+  const key = (r: SpendRow) => normalizeMerchant(r.merchant_raw);
   const counts = new Map<string, number>();
   for (const r of rows) counts.set(key(r), (counts.get(key(r)) ?? 0) + 1);
 
   return rows
+    .filter((r) => !matchSet.has(key(r)))
     .map((r) => ({
       id: r.id,
       occurred_date: r.occurred_date,

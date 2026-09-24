@@ -12,6 +12,11 @@ import {
 import { applyWindfall, type ApprovedFill } from "@/lib/data/allocations";
 import { setBaselineExclusion } from "@/lib/data/spending";
 import {
+  createRecurringItem,
+  deactivateRecurringItem,
+} from "@/lib/data/recurring";
+import { RECURRING_CADENCES, type RecurringInput } from "@/lib/recurring-types";
+import {
   ENVELOPE_KINDS,
   FUNDING_TYPES,
   COVERAGE_TIERS,
@@ -129,6 +134,38 @@ export async function acceptSuggestedTargetAction(
     await setEnvelopeTarget(user.id, envelopeId, Math.round(targetAmount * 100) / 100);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not set the target." };
+  }
+  revalidatePath("/envelopes");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function addRecurringItemAction(
+  input: RecurringInput,
+): Promise<Result> {
+  const user = await requireUser();
+  if (!input.name?.trim()) return { error: "Name the bill." };
+  if (!RECURRING_CADENCES.includes(input.cadence)) return { error: "Choose a cadence." };
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    return { error: "Enter the amount per charge." };
+  }
+  try {
+    await createRecurringItem(user.id, input);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not add the bill." };
+  }
+  revalidatePath("/envelopes");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function removeRecurringItemAction(id: string): Promise<Result> {
+  const user = await requireUser();
+  if (!id) return { error: "Missing bill." };
+  try {
+    await deactivateRecurringItem(user.id, id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not remove the bill." };
   }
   revalidatePath("/envelopes");
   revalidatePath("/dashboard");
